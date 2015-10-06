@@ -3,8 +3,8 @@ Simple AWS cross-account search tool, leveraging Credulous
 
 ## Installation
 
-* Install [credulous](https://github.com/realestate-com-au/credulous)(or the Windows [variant](https://github.com/mefellows/credulous))
-* Download [AWS Search](releases) and put it on your `PATH`
+* Install [credulous](https://github.com/realestate-com-au/credulous) (or the Windows [variant](https://github.com/mefellows/credulous))
+* Download [AWS Search](/mefellows/aws-search/releases) and put it on your `PATH`
 
 ## Usage
 

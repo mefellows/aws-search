@@ -169,9 +169,11 @@ func queryInstance(service *ec2.EC2, filter string, filterVal string) interface{
 		},
 	}
 	resp, err := service.DescribeInstances(params)
-	checkError(err)
-
-	return resp
+	if len(resp.Reservations) > 0 {
+		checkError(err)
+		return resp
+	}
+	return nil
 }
 
 func checkError(err error) {

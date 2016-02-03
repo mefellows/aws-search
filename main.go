@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 func main() {
@@ -25,6 +26,7 @@ func main() {
 		id      string
 		action  string
 		verbose bool
+		timeout time.Duration
 	}
 
 	// Get arguments
@@ -33,8 +35,9 @@ func main() {
 	flag.StringVar(&c.region, "region", os.Getenv("AWS_REGION"), "Region")
 	flag.StringVar(&c.region, "r", os.Getenv("AWS_REGION"), "Region")
 	flag.StringVar(&c.id, "id", "", "Resource ID to find")
-	flag.StringVar(&c.action, "action", "instance", "AWS resource (one of [instance, ip, ami])")
+	flag.StringVar(&c.action, "action", "instance", "AWS resource (one of [instance-id, ip, ami, public-ip, eb, eb-env, eb-resources])")
 	flag.BoolVar(&c.verbose, "verbose", false, "Verbose output. Warning: This may disrupt output/pipe processing")
+	flag.DurationVar(&c.timeout, "timeout", 5*time.Second, "Timeout for the search. Defaults to 5s")
 	flag.Parse()
 
 	if c.region == "" || c.id == "" || c.action == "" {
@@ -55,48 +58,60 @@ func main() {
 		creds[key] = secret
 	}
 
-	var done sync.WaitGroup
-	done.Add(len(accts))
+	doneChan := make(chan bool, 1)
+	go func() {
+		var done sync.WaitGroup
+		done.Add(len(accts))
 
-	// Loop through all of the accounts, search for instance in parallel
-	for key, value := range creds {
-		go func(key string, value string) {
-			config := &aws.Config{
-				Region:      aws.String(c.region),
-				Credentials: credentials.NewStaticCredentials(key, value, ""),
-			}
-			svc := ec2.New(config)
-			ebSvc := eb.New(config)
+		// Loop through all of the accounts, search for instance in parallel
+		for key, value := range creds {
+			go func(key string, value string) {
+				config := &aws.Config{
+					Region:      aws.String(c.region),
+					Credentials: credentials.NewStaticCredentials(key, value, ""),
+				}
+				svc := ec2.New(config)
+				ebSvc := eb.New(config)
 
-			var r interface{}
-			switch strings.ToLower(c.action) {
-			case "instance-id":
-				r = queryInstance(svc, "instance-id", c.id)
-			case "ami":
-				r = queryAmi(svc, c.id)
-			case "ip":
-				r = queryInstance(svc, "private-ip-address", c.id)
-			case "public-ip":
-				r = queryInstance(svc, "ip-address", c.id)
-			case "eb":
-				r = queryBeanstalk(ebSvc, c.id)
-			case "eb-resources":
-				r = queryBeanstalkResources(ebSvc, c.id)
-			case "eb-env":
-				r = queryBeanstalkEnv(ebSvc, c.id)
-			default:
-				log.Fatalf("Action '%s' is not a valid action", c.action)
-			}
+				var r interface{}
+				switch strings.ToLower(c.action) {
+				case "instance-id":
+					r = queryInstance(svc, "instance-id", c.id)
+				case "ami":
+					r = queryAmi(svc, c.id)
+				case "ip":
+					r = queryInstance(svc, "private-ip-address", c.id)
+				case "public-ip":
+					r = queryInstance(svc, "ip-address", c.id)
+				case "eb":
+					r = queryBeanstalk(ebSvc, c.id)
+				case "eb-resources":
+					r = queryBeanstalkResources(ebSvc, c.id)
+				case "eb-env":
+					r = queryBeanstalkEnv(ebSvc, c.id)
+				default:
+					log.Fatalf("Action '%s' is not a valid action", c.action)
+				}
 
-			if r != nil {
-				v, err := json.Marshal(r)
-				checkError(err)
-				fmt.Printf("%s", v)
-			}
-			done.Done()
-		}(key, value)
+				if r != nil {
+					v, err := json.Marshal(r)
+					checkError(err)
+					fmt.Printf("%s", v)
+					doneChan <- true
+				}
+				done.Done()
+			}(key, value)
+		}
+		done.Wait()
+	}()
+
+	// Wait up to timeout, or when first result comes back
+	select {
+	case <-time.After(c.timeout):
+		log.Fatalf("Timeout waiting for all accounts to return")
+	case <-doneChan:
+		os.Exit(0)
 	}
-	done.Wait()
 }
 
 // Return true if AMI exists

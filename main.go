@@ -8,6 +8,7 @@ import (
 	"fmt"
 	aws "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	eb "github.com/aws/aws-sdk-go/service/elasticbeanstalk"
 	"github.com/mefellows/credulous/credulous"
@@ -70,8 +71,9 @@ func main() {
 					Region:      aws.String(c.region),
 					Credentials: credentials.NewStaticCredentials(key, value, ""),
 				}
-				svc := ec2.New(config)
-				ebSvc := eb.New(config)
+				sess := session.New(config)
+				svc := ec2.New(sess)
+				ebSvc := eb.New(sess)
 
 				var r interface{}
 				switch strings.ToLower(c.action) {

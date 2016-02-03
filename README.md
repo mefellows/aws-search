@@ -1,20 +1,20 @@
-# aws-search
-Simple AWS cross-account search tool, leveraging Credulous
+# AWS Search
+Simple AWS cross-account search tool, leveraging Credulous.
 
 ## Installation
 
-* Install [credulous](https://github.com/realestate-com-au/credulous) (or the Windows [variant](https://github.com/mefellows/credulous))
+* Install [Credulous](https://github.com/realestate-com-au/credulous) (or the Windows [variant](https://github.com/mefellows/credulous)), and source some creds.
 * Download [AWS Search](/mefellows/aws-search/releases) and put it on your `PATH`
 
 ## Usage
 
 ```
-aws-search --id ami-5678bbb --action ami --region ap-southeast-2
-aws-search --id i-1234aaaa --action instance-id --region ap-southeast-2
-aws-search --id 54.34.3.1 --action public-ip --region ap-southeast-2.
-aws-search --id myapp --action eb --region ap-southeast-2
-aws-search --id production-a-1234aaa --action eb-env --region ap-southeast-2
-aws-search --id production-a-123aaa --action eb-resources --region ap-southeast-2
+aws-search --id ami-5678bbb --action ami          --region ap-southeast-2
+aws-search --id i-1234aaaa  --action instance-id  --region ap-southeast-2
+aws-search --id 54.34.3.1   --action public-ip    --region ap-southeast-2.
+aws-search --id myapp       --action eb           --region ap-southeast-2
+aws-search --id prd-a-123ab --action eb-env       --region ap-southeast-2
+aws-search --id prd-b-123ab --action eb-resources --region ap-southeast-2
 ```
 
 For verbose logging, simply add the `--verbose` flag.

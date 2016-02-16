@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	eb "github.com/aws/aws-sdk-go/service/elasticbeanstalk"
 	"github.com/mefellows/credulous/credulous"
+	"github.com/vaughan0/go-ini"
 	"io/ioutil"
 	"log"
 	"os"
@@ -23,11 +24,12 @@ import (
 func main() {
 
 	type config struct {
-		region  string
-		id      string
-		action  string
-		verbose bool
-		timeout time.Duration
+		region    string
+		id        string
+		action    string
+		verbose   bool
+		credulous bool
+		timeout   time.Duration
 	}
 
 	// Get arguments
@@ -36,7 +38,8 @@ func main() {
 	flag.StringVar(&c.region, "region", os.Getenv("AWS_REGION"), "Region")
 	flag.StringVar(&c.region, "r", os.Getenv("AWS_REGION"), "Region")
 	flag.StringVar(&c.id, "id", "", "Resource ID to find")
-	flag.StringVar(&c.action, "action", "instance", "AWS resource (one of [instance-id, ip, ami, public-ip, eb, eb-env, eb-resources])")
+	flag.StringVar(&c.action, "action", "instance", "AWS resource (one of [instance, ami, ip, public-ip, eb, eb-resources, eb-env]")
+	flag.BoolVar(&c.credulous, "credulous", false, "Use credulous accounts instead of the stored aws profiles (default)")
 	flag.BoolVar(&c.verbose, "verbose", false, "Verbose output. Warning: This may disrupt output/pipe processing")
 	flag.DurationVar(&c.timeout, "timeout", 5*time.Second, "Timeout for the search. Defaults to 5s")
 	flag.Parse()
@@ -50,34 +53,28 @@ func main() {
 		log.SetOutput(ioutil.Discard)
 	}
 
-	accts := credulous.GetAccounts()
-	creds := make(map[string]string)
-
-	for _, acct := range accts {
-		key, secret, err := credulous.GetCredentials(acct.Username, acct.Account)
-		checkError(err)
-		creds[key] = secret
+	var configs []*aws.Config
+	if c.credulous {
+		configs = listCredulous()
+	} else {
+		configs = listProfiles()
 	}
 
 	doneChan := make(chan bool, 1)
 	go func() {
 		var done sync.WaitGroup
-		done.Add(len(accts))
+		done.Add(len(configs))
 
 		// Loop through all of the accounts, search for instance in parallel
-		for key, value := range creds {
-			go func(key string, value string) {
-				config := &aws.Config{
-					Region:      aws.String(c.region),
-					Credentials: credentials.NewStaticCredentials(key, value, ""),
-				}
+		for _, config := range configs {
+			go func(config *aws.Config) {
 				sess := session.New(config)
 				svc := ec2.New(sess)
 				ebSvc := eb.New(sess)
 
 				var r interface{}
 				switch strings.ToLower(c.action) {
-				case "instance-id":
+				case "instance":
 					r = queryInstance(svc, "instance-id", c.id)
 				case "ami":
 					r = queryAmi(svc, c.id)
@@ -102,7 +99,7 @@ func main() {
 					doneChan <- true
 				}
 				done.Done()
-			}(key, value)
+			}(config)
 		}
 		done.Wait()
 	}()
@@ -191,6 +188,44 @@ func queryInstance(service *ec2.EC2, filter string, filterVal string) interface{
 		return resp
 	}
 	return nil
+}
+
+func listCredulous() []*aws.Config {
+	accts := credulous.GetAccounts()
+	configs := make([]*aws.Config, len(accts))
+
+	for i, acct := range accts {
+		key, secret, err := credulous.GetCredentials(acct.Username, acct.Account)
+		checkError(err)
+		config := &aws.Config{
+			Credentials: credentials.NewStaticCredentials(key, secret, ""),
+		}
+		configs[i] = config
+	}
+	return configs
+}
+
+// Lists all profiles in the default ~/.aws/credentials directory
+func listProfiles() []*aws.Config {
+	// Make sure the config file exists
+	config := os.Getenv("HOME") + "/.aws/credentials"
+
+	if _, err := os.Stat(config); os.IsNotExist(err) {
+		fmt.Println("No credentials file found at: %s", config)
+		os.Exit(1)
+	}
+
+	file, _ := ini.LoadFile(config)
+	configs := make([]*aws.Config, 0)
+
+	for key, _ := range file {
+		config := &aws.Config{
+			Credentials: credentials.NewSharedCredentials("", key),
+		}
+		configs = append(configs, config)
+	}
+
+	return configs
 }
 
 func checkError(err error) {
